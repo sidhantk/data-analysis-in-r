@@ -1,0 +1,845 @@
+Exploratory Analysis of Prosper Loan Data by Sidhant Karamchandani
+===================================================================
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using in your analysis in this code
+# chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk. This
+# prevents the code from displaying in the knitted HTML output. You should set
+# echo=FALSE for all code chunks in your file, unless it makes sense for your
+# report to show the code that generated a particular plot.
+
+# The other parameters for "message" and "warning" should also be set to FALSE
+# for other code chunks once you have verified that each plot comes out as you
+# want it to. This will clean up the flow of your report.
+
+library(ggplot2)
+library(memisc)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Load_the_Data}
+# Load the Data
+loan_data = read.csv("prosperLoanData.csv")
+```
+
+# Introduction
+
+In this project, I'll be exploring loan data provided by the lender Prosper.
+They have publicly provided laon data for a variety of loan types, from the year
+2005 to 2014. As harmful as the 2008 recession was, the reasons it formed are
+fascinating and we can learn from them. The purpose of this project is to learn
+a bit more about how Americans behave when it comes to personal finance and 
+taking loans.
+
+
+# Univariate Plots Section
+
+Let's start with learning the basics of the dataset itself.
+
+```{r echo=FALSE, Univariate_Plots}
+dim(loan_data)
+str(loan_data)
+```
+
+We have 113937 loan observations, with 81 various variables relating to the loan
+or borrower characteristics. The LoanOrigination dates are stored as factored 
+strings, though. I want to convert these to date objects.
+
+```{r}
+# Converting date column from factored strings to date objects
+loan_data$LoanOriginationDate <- as.Date(loan_data$LoanOriginationDate)
+str(loan_data$LoanOriginationDate)
+range(loan_data$LoanOriginationDate)
+```
+
+Perfect. Now I know my data is from 2005 to 2014. What kind of loans were taken
+out during this time period? First let's add a column to view loan types by
+their name, not number.
+
+```{r}
+# New column to display loan type names
+loan_data$ListingCategory <- factor(loan_data$ListingCategory..numeric., labels = c("Not Available", "Debt Consolidation", "Home Improvement", "Business", "Personal Loan", "Student Use", "Auto", "Other", "Baby&Adoption", "Boat", "Cosmetic Procedure", "Engagement Ring", "Green Loans", "Household Expenses", "Large Purchases", "Medical/Dental", "Motorcycle", "RV", "Taxes", "Vacation", "Wedding Loans"))
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Histogram of loan types
+ggplot(aes(x = ListingCategory), data = loan_data) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+It seems that a LOT of people are taking out loans to pay off other debt... Is
+this worrisome? We'll explore that later.
+
+
+Even though Student Use above is a relatively low frequency loan, some people 
+are worried that high student loan debt could create a future recession. Let's 
+leave out all other occupations and see what kinds of students are taking loans.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Histogram of student loans after subsetting for only those Occupations
+students <- loan_data[grepl("*Student*", loan_data$Occupation), ]
+
+ggplot(aes(x = Occupation), data = students) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+The highest frequency loan taken by a student is a loan taken by a graduate
+student. This makes sense, as graduate school costs far more than undergraduate
+school on average, so a grad student might be more in need of immediate cash.
+
+Next let's look at loan sizes.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Histogram of loan amounts
+ggplot(aes(x = LoanOriginalAmount), data = loan_data) +
+  geom_histogram(binwidth = 1000, color = "white") +
+  scale_x_continuous(breaks = seq(0, 36000, 1000), limits = c(0, 36000)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+The loan amounts are not exactly normally distributed. They are skewed to the
+right, with a couple outliers beyond $30,000. The median appears to be around
+the high 4000s mark. Let's dive deeper into the measures of center:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# loan amount centers
+summary(loan_data$LoanOriginalAmount)
+```
+I was wrong. The median is far higher than I thought. The mean is also much 
+higher than my estimated median, but that makes sense because of the relatively
+huge outliers and spikes around the 10,000 and 15,000 mark. I also want to know
+more about the lengths of the loans, and their interest rates.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Histogram of loan terms
+ggplot(aes(x = Term), data = loan_data) +
+  geom_histogram(color = "white")
+```
+
+Not much variability here...let's check a table:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# table of loan terms
+table(loan_data$Term)
+```
+
+There's only three values for loan term: 1 year, 3 years, and 5 years. The 
+majority are 3 years, followed by 5 years, and then 1 year. Next up, interest 
+rates:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Histogram of interest rate
+ggplot(aes(x = loan_data$LenderYield), data = loan_data) +
+  geom_histogram(binwidth = 0.01, color = "white") +
+  scale_x_continuous(breaks = seq(0, 0.4, 0.02), limits = c(0, 0.4)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+Interest rates are much more varied. First of all, interest rates are normally
+distributed, with a center around 0.16 - 0.17. There's another spike around
+0.31. Let's see if my assumptions are right:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# summary of interest rates
+summary(loan_data$LenderYield)
+```
+
+I do not understand how an interest rate can be negative. That data point must
+be incorrect. But, I was pretty spot on with my assumptions about the center.
+
+Now that I know the loan amounts, their lengths, and their interest rates, what 
+are the incomes of the borrowers?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# ordering the income ranges first
+loan_data$IncomeRange <- ordered(loan_data$IncomeRange, levels = 
+                                   c("Not displayed", "Not employed", "$0",
+                                     "$1-24,999", "$25,000-49,999",
+                                     "$50,000-74,999", "$75,000-99,999",
+                                     "$100,000+"))
+# income ranges
+ggplot(aes(x = IncomeRange), data = loan_data) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+Borrower's incomes seem to be somewhat normally distributed. By looking at this 
+plot I'd guess the interquartile range is 25K - 75K. I want to take this 
+further. What is each borrower's cash flow? Meaning their monthly income minus
+their monthly loan payment.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# new cash flow variable
+loan_data$CashFlow <- 
+  (loan_data$StatedMonthlyIncome - loan_data$MonthlyLoanPayment)
+
+ggplot(aes(x = CashFlow), data = loan_data) +
+  geom_histogram(binwidth = 200, color = "white") +
+  scale_x_continuous(breaks = seq(0, 10000, 200), limits = c(0, 10000)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+Cash Flow is normally distributed. Let's explore a summary to find outliers and
+the measures of center. 
+
+```{r echo=FALSE}
+# cash flow
+summary(loan_data$CashFlow)
+```
+
+The measures of center lie around 4000-5000, which is a healthy monthly cash 
+flow. Some people have negative cash flows, which could have harmful financial 
+consequences if not addressed. There are some borrowers with massive cash flows,
+upto 1.7 million. These must be business owners and executives right?
+
+```{r echo=FALSE}
+# cash flow > 1 million
+with(subset(loan_data, CashFlow > 1000000), table(Occupation))
+```
+
+The person is listed as a "Professional". Definitely an outlier. Okay, how much 
+are borrowers in debt?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# borrower debt to income ratios
+ggplot(aes(x = DebtToIncomeRatio), data = loan_data) +
+  geom_histogram(binwidth = 0.1, color = "white")
+```
+
+Debt to income ratio is normally distributed, with a couple outliers around 
+10.0. For the most part, borrowers do not have massive debt compared to their
+income, except for the high outliers. I'll also add another quick plot without
+the high outlier:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# borrower debt to income ratios
+ggplot(aes(x = DebtToIncomeRatio), data = loan_data) +
+  geom_histogram(binwidth = 0.1, color = "white") +
+  scale_x_continuous(limits = c(0, 1.5))
+```
+
+Now we have a much better look at DebtToIncomeRatio. It's still mostly 
+normally distributed, with a bit of a skew to the right.
+
+Someone once said, "a friend in need is a friend indeed". How much financial
+help are borrowers recieving from friends?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# investment from friends amounts
+ggplot(aes(x = InvestmentFromFriendsAmount), data = loan_data) +
+  geom_histogram(color = "white")
+```
+
+Seems odd to just see one spike in the beginning of the x-axis, but let's take
+a closer look:
+
+```{r echo=FALSE}
+# investment from friends amounts
+summary(loan_data$InvestmentFromFriendsAmount)
+```
+
+It seems that most people do not take money from friends; and if they do, it's
+in very small amounts. The mean is only $16.55. But there also is a a very high
+outlier at $25,000. Perhaps this person has wealthy friends, or maybe the
+friends were acting as angel investors for a business. I will create the same
+plot again below, but without values of 0.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# investment from friends amounts
+filtered_data <- subset(loan_data, InvestmentFromFriendsAmount != 0)
+ggplot(aes(x = InvestmentFromFriendsAmount), data = filtered_data) +
+  geom_histogram(color = "white") +
+  scale_x_continuous(breaks = seq(100, 25100, 1000), limits = c(100, 25100)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+This visualization looks a lot better. Most investments from friends are
+relatively low; this data is very skewed to the right.
+
+Next, I'll explore other investors that are not friends. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# investors
+ggplot(aes(x = Investors), data = loan_data) +
+  geom_histogram(color = "white") +
+  scale_x_continuous(breaks = seq(100, 1300, 200), limits = c(100, 1200)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+The number of investors per loan is also very skewed to the right, with a huge
+spike around 50-70. I'm guessing this is probably because most requested loans
+are at or below $10,000, as we saw above. Only a minority of loans are above
+that amount, meaning most loans probably don't need a huge number of investors
+to cover it.
+
+Lastly, let's look at ProsperRatings (essentially calculated ratings assessing
+the quality of the loan & borrower ability) assigned by Prosper, and loan 
+statuses to see how loans actually turned out.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# prosper ratings
+loan_data$ProsperRating..Alpha. <- ordered(loan_data$ProsperRating..Alpha., 
+                                           levels = c("", "AA", "A", "B", "C", 
+                                                      "D", "E", "HR"))
+
+ggplot(aes(x = loan_data$ProsperRating..Alpha.), data = loan_data) +
+  geom_bar(color = "white", fill = "#4286f4")
+```
+
+There are a bunch of loans without a rating, which is okay as this was specified
+in the dataset description. But otherwise, prosper ratings are actually very
+normally distributed!
+
+```{r echo=FALSE}
+# loan statuses
+ggplot(aes(x = LoanStatus), data = loan_data) +
+  geom_bar(color = "white") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+Only a relatively small proportion of loans are defaulted or past due. This is
+very reassuring!
+
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+There are 113,937 loan observations, with 82 variables being tracked. The data
+is from 2005 to 2014. The data tracks various aspects of the loan itself, and of
+the borrower.
+
+### What is/are the main feature(s) of interest in your dataset?
+The main factors I'll be exploring going forward will involve defaulted loans. I
+want to see if it is possible to predict whether a loan will be defaulted, based
+on borrower & loan characteristics.
+
+### What other features in the dataset do you think will help support your \
+investigation into your feature(s) of interest?
+Other features that will support my analysis include: loan types, loan amounts, 
+credit/risk scores, late payments, defaulted loans, incomes, and debt. 
+
+### Did you create any new variables from existing variables in the dataset?
+Yes, I created the CashFlow variable, which is StatedMonthlyIncome minus
+MonthlyLoanPayment.
+
+### Of the features you investigated, were there any unusual distributions? \
+Did you perform any operations on the data to tidy, adjust, or change the form \
+of the data? If so, why did you do this?
+Loan amounts are skewed to the right. IncomeRange is somewhat normally
+distributed. Debt to Income ratios are also normally distributed, with a couple
+very high outliers. Investments from friends are extremely low except for one
+anomaly. Cash Flow is normally distributed with a couple outliers.
+I changed LoanOriginationDate from a factor to a date format, and I changed 
+IncomeRange to an ordered factor. A date variable makes no sense to analyze
+unless it is actually presented as a date. And the plot for IncomeRange was also
+hard to make sense of unless it was ordered. 
+
+
+# Bivariate Plots Section
+
+After the housing market crash of 2008, I would assume that financial
+institutions are much better now at assessing qualifications for loans. Let's 
+see how accurate Prosper is. I'll look at loan statuses and their associated
+ratings at the time of the loan creation.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Bivariate_Plots}
+# Loan statuses vs Prosper ratings
+ggplot(aes(x = LoanStatus), data = loan_data) +
+  geom_histogram(aes(fill = loan_data$ProsperRating..Alpha.), 
+                 position = "dodge", stat = "count") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+First of all, a lot of loans have a rating of N/A because that data is only
+available after July 2009. For loans that were completely paid in full, Prosper
+was not very accurate with their scores. For completed loans, Prosper had given
+a similar amount of good ratings (AA, A, B), as bad ratings (C, D, E). Defaulted
+loans are hard to see, so let's zoom in to those below.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Loan statuses vs Prosper ratings
+defaulted = subset(loan_data, 
+                   LoanStatus == 'Defaulted' & ProsperRating..Alpha. != '')
+ggplot(aes(x = LoanStatus), data = defaulted) +
+  geom_bar(aes(fill = defaulted$ProsperRating..Alpha.), 
+                 position = "dodge", stat = "count")
+```
+
+For defaulted loans, Prosper was fortunately more accurate in their pre-ratings.
+The highest rating, AA, was given the least. Bad ratings (C, D, E) were given in
+much higher proportions than the best 3 ratings.
+
+So it seems Prosper takes the conservative route and hands out bad ratings at
+the slighest notion of a potential defaulted loan in the future. How about the
+individual investors who fund these loans? Let's see how investors act based on
+debt to income ratios.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Debt to Income ratios vs number of investors lending
+ggplot(aes(x = DebtToIncomeRatio, y = Investors), 
+       data = loan_data) +
+  geom_point(color = "#109876", alpha = 0.33, size = 1.0, position = "jitter") +
+  scale_x_continuous(breaks = seq(0, 1.0, 0.05), limits = c(0, 1.0)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+Investors also seem to pretty careful. The higher a borrower's debt to income
+ratio, the lower the number of investors willing to lend. Let's see if there is
+any correlation between the two.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Debt to Income ratios vs number of investors lending. CORRELATION COEFFICIENT
+cor.test(x = loan_data$DebtToIncomeRatio, y = loan_data$Investors)
+```
+
+R is not able to find a significant correlation coefficient. Perhaps the
+presence of outliers, or lack of normality threw the results off. But based on 
+the plot above, I still stick with my conclusion.
+
+All is well and good for the investor/lender when the borrower provides their
+income, but what about when the income isn't verifiable? Is this usually
+associated with an inability to pay off a loan? Or is it just random 
+circumstance? Let's see.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Loan Statuses vs Verifiable Income
+ggplot(aes(x = LoanStatus), data = loan_data) +
+  geom_histogram(aes(fill = loan_data$IncomeVerifiable), 
+                 position = "dodge", stat = "count") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+There doesn't seem to be a significant association between an income being 
+unverifiable and the borrower not being able to pay off their loan.
+
+The average citizen has a variety of bill payments due each month. How can 
+investors/lenders have peace of mind that their loan will be paid, based on a
+borrower's monthly cash flow?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Loan Status vs Cash Flow
+ggplot(aes(x = LoanStatus, y = CashFlow), data = loan_data) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  coord_cartesian(ylim = c(0, 10000))
+```
+
+Not too surprisingly, the range and median cash flows for completed loans are
+higher than the range and median cash flows of defaulted loans. That being said,
+the differences are not drastic. Also, the spread and center of cash flows for
+late payments are no different than those of completed loans, meaning cash flow
+is not a good predictor of whether a borrower will pay late. 
+
+Let's see if investors are more confident with higher calculated cash flows.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Investors vs Cash Flow
+# using "summary_bin" to break my cash flow into bins of 500, otherwise the plot
+# is far too overplotted and looks like a mess. Then in each bin, I'm using
+# fun.y to calculate the median number of Investors per bin. summary_bin is 
+# similar to summary, except the fun.y is applied to the y values of BINS of
+# x values, instead of every single x value
+ggplot(aes(x = CashFlow, y = Investors), data = loan_data) +
+  geom_point(stat = 'summary_bin', fun.y = median, binwidth = 500) +
+  geom_smooth(stat = 'summary_bin', fun.y = median, binwidth = 500, 
+              size = 0.5) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  ylab("Median Investors") +
+  scale_x_continuous(breaks = seq(0, 10000, 500), limits = c(0, 10000))
+```
+
+It looks like there is a positive correlation here. Let's confirm with
+a correlation test:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Investors vs Cash Flow
+cor.test(x = loan_data$CashFlow, y = loan_data$Investors)
+```
+
+The calculated correlation coefficient is pretty weak, but that is probably
+because I did not calculate it using Cash Flow in bins, nor Investors as a 
+median of those bins. 
+
+Continuing on, how do investors act based upon ProsperScore (risk score) ?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Investors vs Prosper Score
+ggplot(aes(x = ProsperScore, y = Investors), data = loan_data) +
+  geom_point(stat = 'summary', fun.y = median) +
+  geom_smooth(stat = 'summary', fun.y = median, size = 0.5) +
+  ylab("Median Investors") +
+  scale_x_continuous(breaks = seq(0, 10, 1), limits = c(0, 10))
+```
+
+Once again, there seems to be a mostly positive correlation between the median
+number of Investors according to ProsperScore. As ProsperScore increases
+(meaning a better score), the median number of Investors increases. Confirming
+with correlation test:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Investors vs Cash Flow
+cor.test(x = loan_data$ProsperScore, y = loan_data$Investors)
+```
+
+There's definitely more of a positive correlation here. The only reason I think
+the correlation coefficient isn't higher is because of the unexplained drop in
+investors at ProsperScores between 2-4. There must be other factors that
+investors analyzed to explain that drop, or maybe there weren't many loans in
+that range of scores so the median number of investors is low.
+
+
+# Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. How did the feature(s) of interest vary with other features in \
+the dataset?
+For loans that ended up fully completed, Prosper wasn't super accurate with
+their ProsperRatings. There were almost as many bad ratings as good ratings. But
+conversely, for loans that ended up Defaulted, Prosper was a lot more accurate,
+dishing out far more bad ratings. This means Prosper is pretty conservative in
+their ratings. The spread and center of borrower Cash Flow for completed loans
+were visibly higher than those of defaulted loans, but not significantly 
+different from loans that are delinquent (late).
+
+### Did you observe any interesting relationships between the other features \
+(not the main feature(s) of interest)?
+Investors seem to favor lower Debt to Income Ratios, as well as higher Cash 
+Flows and higher ProsperScores. This would suggest that investors that
+participate on Prosper are usually selective. Also, there doesn't seem to be any
+significant association between incomes being verifiable and ability to pay a 
+loan off or not.
+
+### What was the strongest relationship you found?
+At the moment, the strongest relationship I've found is between the number of 
+investors and a borrower's ProsperScore. I'm sure I will find stronger 
+relationships moving forward.
+
+# Multivariate Plots Section
+
+I've looked at a variety of factors at this point. It's time to combine and 
+compare them. Let's see how investors stack up against Prosper in their analysis
+of loans. I'll look at median numbers of investors, ProsperScores, and whether
+loans were Completed or Defaulted:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Multivariate_Plots}
+# Investors vs Prosper Score vs Loan Status
+filtered_data <- subset(loan_data, 
+                        LoanStatus == "Completed" | LoanStatus == "Defaulted")
+
+ggplot(aes(x = ProsperScore, y = Investors), data = filtered_data) +
+  geom_point(aes(color = LoanStatus), stat = 'summary', fun.y = median) +
+  ylab("Median Investors") +
+  geom_smooth(aes(color = LoanStatus), stat = 'summary', fun.y = median, 
+              size=0.5) +
+  scale_x_continuous(breaks = seq(0, 10, 1), limits = c(0, 10))
+```
+
+As shown before, the number of investors drastically increases as ProsperScore
+increases. But what is worrisome is that at ProsperScores between 5.5 and 8.5,
+signifnicantly more investors funded loans that ended up Defaulted rather than
+Completed. The risks associated with loans with scores of 5-6 are reasonable,
+but why did so many investors fund failed loans at scores 7-8.5? Was Prosper 
+inaccurate in their risk scores, or were investors wrong in their analysis of 
+the loan, or both? It's difficult to tell as of now. Let's keep digging in other
+directions.
+
+Next let's see how accurate investors were in their analysis of debt to income
+ratios, and of how their loans would turn out.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Debt to Income ratios vs number of investors lending vs Loan Status
+filtered_data <- subset(loan_data, 
+                        LoanStatus != "Current" & LoanStatus != "Cancelled" & 
+                          LoanStatus != "Chargedoff")
+
+ggplot(aes(x = DebtToIncomeRatio, y = Investors, color = LoanStatus), 
+       data = filtered_data) +
+  geom_point(alpha = 0.5, size = 1.0, position = "jitter") +
+  scale_x_continuous(breaks = seq(0, 1.0, 0.05), limits = c(0, 1.0)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+The vast majority of loans are completed, fortunately. Once Debt to Income Ratio
+hits 0.55 and above, we see a growing proportion of Defaulted loans to 
+Completed loans, and we also see the number of investors decreasing, with a
+couple outliers in the 0.9 to 1.0 range. (Very nice lenders they must be, or 
+maybe they charged huge interest). So for the most part, investors are making
+the right calls when it comes to Debt to Income Ratios.
+
+I would hope that investors are not discriminating based on income ranges. What
+should matter is net cash flow and debt, not income. Let's see whether investors
+are discriminating or not based on income:
+
+```{r message=FALSE, warning=FALSE}
+# Income vs Cash Flow vs Investors
+# first need to bucket cash flow so I can categorize it
+loan_data$CashFlow.bucket <- cut(loan_data$CashFlow, 
+                                 c(-1200, 800, 2800, 4800, 6800, 10000, 
+                                   2000000))
+
+ggplot(aes(x = IncomeRange, y = Investors), data = loan_data) +
+  geom_boxplot() +
+  facet_wrap(~CashFlow.bucket) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  coord_cartesian(ylim = c(0, 500))
+```
+
+The pattern I am seeing here is that for low to medium Cash Flows, all the 
+way from -1200 to 4800, investor numbers are clearly higher for higher incomes. 
+But once we hit the high to elite cash flow levels, 4800+ to 2M, investor 
+numbers don't show a clear preference for higher incomes. So it seems that some 
+income discrimination exists, but only for low to medium Cash Flows, not for 
+high to elite Cash Flows.
+
+Let's next confirm that my earlier assumption is correct: that debt and cash
+flow together are good indicators of being able to pay off a loan.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Debt to Income Ratio vs Cash Flow vs Loan Status
+filtered_data <- filtered_data <- subset(loan_data, 
+                        LoanStatus == "Completed" | LoanStatus == "Defaulted")
+
+ggplot(aes(x = DebtToIncomeRatio, y = CashFlow, color = LoanStatus), 
+       data = filtered_data) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  scale_x_continuous(breaks = seq(0, 5, 0.25), limits = c(0, 5)) +
+  scale_y_continuous(breaks = seq(0, 10000, 500), limits = c(0, 10000))
+```
+
+Once again, let's not look at total amounts of Completed and Defaulted loans,
+because there are far more Completed than Defaulted overall. Let's look at 
+proportions. Higher CashFlows and lower DebtToIncome ratios are clearly 
+associated with much higher proportions of Completed loans, while low CashFlows
+and high DebtToIncome ratios are associated with much more closer proportions of
+Completed vs Defaulted loans. So I was correct in this assumption.
+
+Lastly, I want to take a look at the terms of the loans itself. Do factors such
+as interest rate (called LenderYield here) or length of loan (called Term here)
+predict the difficulty of the borrower paying off the loan?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Converting Term to an ordered factor instead of continuous 
+loan_data$Term <- factor(loan_data$Term, levels=c(12,36,60), ordered=TRUE)
+
+# LenderYield (interest rate) vs Term (loan length) vs Loan Status
+filtered_data <- subset(loan_data, 
+                        LoanStatus != "Current" & LoanStatus != "Cancelled" & 
+                          LoanStatus != "Chargedoff")
+
+ggplot(aes(x = Term, y = LenderYield), data = filtered_data) +
+  geom_jitter(alpha = 0.1) +
+  facet_wrap(~LoanStatus)
+```
+
+So right away we can see that there is only a small number of available loan
+Terms. There is one noticable pattern for loan Term: for Defaulted loans, a 3
+year loan was the most common. As for LenderYield, there's no discernible 
+pattern. It looks like for every Loan Status, whether Complete, Defaulted, or 
+Delinquent, there is a huge variety of interest rates on these loans.
+
+Now that I have explored quite a few variables, I want to create a model and try
+predicting a potential Loan Status for it. At this moment I do not know how to
+build a model of a categorical variable, so I will filter the data and set a
+Defaulted Loan equal to 100 and a Completed Loan equal to 0.
+
+```{r message=FALSE, warning=FALSE}
+# filter data first
+filtered_data <- filtered_data <- subset(loan_data, 
+                        LoanStatus == "Completed" | LoanStatus == "Defaulted")
+
+# change Completed to 0 and Defaulted to 1
+filtered_data$ModelData[filtered_data$LoanStatus == "Completed"] <- 0
+filtered_data$ModelData[filtered_data$LoanStatus == "Defaulted"] <- 100
+
+m1 <- lm(ModelData ~ I(CashFlow/1000), data = filtered_data)
+m2 <- update(m1, ~ . + DebtToIncomeRatio)
+m3 <- update(m2, ~ . + ProsperScore)
+mtable(m1, m2, m3)
+```
+
+With CashFlow, DebtToIncomeRatio, and ProsperScore all at zero, the LoanStatus 
+can be expected to be at 13.011. (In this crude model, a 0 represents a 
+Completed loan and a 100 represents a Defaulted loan.) For $1000 increase in 
+CashFlow, we can expect the LoanStatus to drop by -0.274. For every unit
+increase in DebtToIncomeRatio on top of that, we can expect at 2.052 unit 
+increase in LoanStatus, inching closer to a Default. And if we add a unit
+increase of ProsperScore, we see a -0.747 drop back down towards a Completed
+loan.
+
+Now let's try to predict a LoanStatus with some artificial data.
+
+```{r message=FALSE, warning=FALSE}
+# First, let's create a simple dataframe with one row of artificial data.
+myLoan = data.frame(CashFlow = 2000, DebtToIncomeRatio = 0.5, ProsperScore = 5)
+# Then, let's invoke the predict() function and pass in our most updated model 
+# object, m3, our new data frame, and our confidence interval, 0.95.
+modelEstimate = predict(m3, newdata = myLoan, interval = "prediction", 
+                        level = 0.95)
+modelEstimate
+```
+
+With a Cashflow of 2000, a DebtToIncomeRatio of 0.5, and a ProsperScore of 5,
+our model predicts a LoanStatus 0f 7.14, which is pretty close to a Completed
+Loan value. The lower and upper bounds have quite a big range, though. This 
+model is obviously very crude.
+
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. Were there features that strengthened each other in terms of \
+looking at your feature(s) of interest?
+Clearly, high ProsperScores given by Prosper inspire more investors to lend.
+Even for loans that ended up defaulting, a relatively high median number of
+investors were quick to lend when ProsperScores were around 8. On the other 
+hand, investors made good decisions when it came to Debt to Income Ratios. They
+were much more conservative when lending here and it paid off; a higher
+proportion of loans defaulted with higher Debt to Income Ratios, while a lower
+number of investors jumped on board. Income discrimination also seems to be 
+present, but not ubiquitously. Only when a borrower has a low to medium cash
+flow, more investors flock to higher income borrowers. But when a borrower has
+a high to elite cash flow, investors don't necessarily prefer any income. Cash
+Flow and Debt to Income Ratios are also strongly associated with ability to pay
+off loans, as expected. The lower the Cash Flow and higher the Debt to Income
+Ratio, the higher the proportion of defaulted loans.
+
+### Were there any interesting or surprising interactions between features?
+The two biggest surprises to me were: 1) that loan length (Term) and interest
+rate (LenderYield) had no significant correlation or effect on the borrower's
+ability to pay the loan off, and 2) that the verifiability/authenticity of a
+borrower's listed income had no noticeable effect on the borrower's ability to
+pay the loan off (this was in the bivariate section, but surprising 
+nonetheless).
+
+### OPTIONAL: Did you create any models with your dataset? Discuss the \
+strengths and limitations of your model.
+I did try to create a linear model. It was very crude; the details are above. 
+The strength is that I included multiple variables I found significant, but the
+limitation is that I forced a linear model on a categorical variable by slightly
+transforming the LoanStatus variable.
+------
+
+
+# Final Plots and Summary
+
+### Plot One
+```{r message=FALSE, warning=FALSE, echo=FALSE, Plot_One}
+# Loan statuses vs Prosper ratings
+filtered_data <- subset(loan_data, ProsperRating..Alpha. != "" & 
+                          LoanStatus != "Current")
+
+ggplot(aes(x = LoanStatus), data = filtered_data) +
+  geom_histogram(aes(fill = filtered_data$ProsperRating..Alpha.), 
+                 position = "dodge", stat = "count") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        plot.title = element_text(hjust = 0.5)) +
+  ggtitle("Loan Statuses vs Prosper Ratings") +
+  xlab("Loan Status") +
+  ylab("Count") +
+  guides(fill = guide_legend(title = "Prosper Rating (AA - HR)"))
+```
+```{r message=FALSE, warning=FALSE, echo=FALSE, Plot_OneB}
+# Loan statuses vs Prosper ratings
+defaulted = subset(loan_data, 
+                   LoanStatus == 'Defaulted' & ProsperRating..Alpha. != '')
+
+ggplot(aes(x = LoanStatus), data = defaulted) +
+  geom_bar(aes(fill = defaulted$ProsperRating..Alpha.), 
+                 position = "dodge", stat = "count") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ggtitle("Defaulted Loans vs Prosper Ratings") +
+  xlab("Loan Status") +
+  ylab("Count") +
+  guides(fill = guide_legend(title = "Prosper Rating (AA - HR)"))
+```
+
+### Description One
+I did two plots here in place of one, because to tell the full story I needed a
+second plot to zoom into Defaulted Loans. For loans that were completely paid in
+full, Prosper was not very accurate with their scores. For completed loans, 
+Prosper had given a similar amount of good ratings (AA, A, B), as bad ratings 
+(C, D, E). For defaulted loans, Prosper was fortunately more accurate in their 
+pre-ratings. The highest rating, AA, was given the least. Bad ratings (C, D, E) 
+were given in much higher proportions than the best 3 ratings.
+
+So it seems Prosper takes the conservative route and hands out bad ratings at
+the slighest notion of a potential defaulted loan in the future.
+
+### Plot Two
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Two}
+# Debt to Income Ratio vs Cash Flow vs Loan Status
+filtered_data <- filtered_data <- subset(loan_data, 
+                        LoanStatus == "Completed" | LoanStatus == "Defaulted")
+
+ggplot(aes(x = DebtToIncomeRatio, y = CashFlow, color = LoanStatus), 
+       data = filtered_data) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = seq(0, 5, 0.25), limits = c(0, 5)) +
+  scale_y_continuous(breaks = seq(0, 10000, 500), limits = c(0, 10000)) +
+  ggtitle("Debt to Income Ratio vs Cash Flow vs Loan Status") +
+  xlab("Debt to Income Ratio (0-5)") +
+  ylab("Cash Flow ($ USD)") +
+  guides(fill = guide_legend(title = "Loan Status"))
+```
+
+### Description Two
+Let's not look at total amounts of Completed and Defaulted loans, because there 
+are far more Completed than Defaulted overall. Let's look at proportions. Higher
+CashFlows and lower DebtToIncome ratios are clearly associated with much higher
+proportions of Completed loans, while low CashFlows and high DebtToIncome ratios
+are associated with much more closer proportions of Completed vs Defaulted 
+loans. Both of these trends can be used by investors and Prosper to analyze
+borrowers' characteristics before loans are given.
+
+### Plot Three
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Three}
+# Income vs Cash Flow vs Investors
+# first need to bucket cash flow so I can categorize it
+loan_data$CashFlow.bucket <- cut(loan_data$CashFlow, 
+                                 c(-1200, 800, 2800, 4800, 6800, 10000, 
+                                   2000000))
+levels(loan_data$CashFlow.bucket) <- c("-$1200 to $800", "$800 to $2800",
+                                       "$2800 to $4800", "$4800 to $6800",
+                                       "$6800 to $10000", "$10000 to $2000000")
+
+ggplot(aes(x = IncomeRange, y = Investors), data = loan_data) +
+  geom_boxplot() +
+  facet_wrap(~CashFlow.bucket) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        plot.title = element_text(hjust = 0.5)) +
+  coord_cartesian(ylim = c(0, 500)) +
+  ggtitle("Income vs Investors by Cash Flow Range") +
+  xlab("Income Range ($ USD)") +
+  ylab("Number of Investors")
+```
+
+### Description Three
+The pattern I am seeing here is that for low to medium Cash Flows, all the 
+way from -1200 to 4800, investor numbers are clearly higher for higher incomes. 
+But once we hit the high to elite cash flow levels, 4800+ to 2M, investor 
+numbers don't show a clear preference for higher incomes. So it seems that some 
+income discrimination exists, but only for low to medium Cash Flows, not for 
+high to elite Cash Flows.
+------
+
+
+# Reflection
+Getting the chance to explore this dataset gave me very good practice with the
+concepts I've learned in Exploratory Data Analysis. I encountered a few
+struggles, including: overplotting, missing data ("N/A"), incorrect data formats
+(dates), unnecessary variables & factors, and most of all, trying to build a
+model of a categorical variable. But for the most part, I think my analysis went
+well. I was able to explore quite a few variables and see their relationships
+with one another. I was able to use a variety of plot types in meaningful ways.
+A couple things that surprised me: that loan length and interest rate had no 
+significant correlation or effect on the borrower's ability to pay the loan off,
+and that the verifiability/authenticity of a borrower's listed income had no 
+noticeable effect on the borrower's ability to pay the loan off. As for future
+work, I really need to learn how to build an accurate prediction model for Loan 
+Status, instead of changing it to a continuous variable to force a linear model 
+to work.
